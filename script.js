@@ -358,7 +358,10 @@ function updateCompareButton() {
     const hasHml = filesState.hml.length > 0;
     const hasPre = filesState.preprod.length > 0;
     const hasProd = filesState.prod.length > 0;
-    document.getElementById('btnCompare').disabled = !(hasHml && hasPre && hasProd);
+
+    // Permite comparar se pelo menos dois ambientes quaisquer possuírem arquivos
+    const activeEnvs = [hasHml, hasPre, hasProd].filter(Boolean).length;
+    document.getElementById('btnCompare').disabled = (activeEnvs < 2);
 }
 
 function detectEnvByFilename(filename) {
@@ -429,47 +432,64 @@ document.getElementById('btnCompare').addEventListener('click', async () => {
     progressFill.style.width = '0%';
 
     try {
-        progressFill.style.width = '30%';
-        const hmlResult = await processEnvironment('HML', filesState.hml);
-        progressFill.style.width = '60%';
-        const preResult = await processEnvironment('PREPROD', filesState.preprod);
-        progressFill.style.width = '90%';
-        const prodResult = await processEnvironment('PROD', filesState.prod);
+        progressFill.style.width = '20%';
+        const hmlResult = filesState.hml.length > 0 ? await processEnvironment('HML', filesState.hml) : { apps: new Map(), duplicadas: [] };
+        progressFill.style.width = '50%';
+        const preResult = filesState.preprod.length > 0 ? await processEnvironment('PREPROD', filesState.preprod) : { apps: new Map(), duplicadas: [] };
+        progressFill.style.width = '80%';
+        const prodResult = filesState.prod.length > 0 ? await processEnvironment('PROD', filesState.prod) : { apps: new Map(), duplicadas: [] };
         progressFill.style.width = '100%';
 
         resultados = { hml: hmlResult.apps, preprod: preResult.apps, prod: prodResult.apps };
 
-        const preProd = compareEnvironments(resultados.preprod, resultados.prod, 'PREPROD', 'PROD');
-        const preHml = compareEnvironments(resultados.preprod, resultados.hml, 'PREPROD', 'HML');
-        const hmlProd = compareEnvironments(resultados.hml, resultados.prod, 'HML', 'PROD');
+        let preProdData = [], preHmlData = [], hmlProdData = [];
+        let diffPreProd = 0, diffPreHml = 0;
 
-        const preProdData = preProd.map(r => ({
-            Aplicação: r.nome,
-            VersaoPREPROD: r.versaoA,
-            VersaoPROD: r.versaoB,
-            Status: r.status,
-            PathPREPROD: r.pathA,
-            PathPROD: r.pathB
-        }));
+        // Compara PREPROD x PROD (Se ambos existirem)
+        if (filesState.preprod.length > 0 && filesState.prod.length > 0) {
+            const preProd = compareEnvironments(resultados.preprod, resultados.prod, 'PREPROD', 'PROD');
+            diffPreProd = preProd.filter(r => r.status.startsWith('Maior em')).length;
+            preProdData = preProd.map(r => ({
+                Aplicação: r.nome,
+                VersaoPREPROD: r.versaoA,
+                VersaoPROD: r.versaoB,
+                Status: r.status,
+                PathPREPROD: r.pathA,
+                PathPROD: r.pathB
+            }));
+        }
 
-        const preHmlData = preHml.map(r => ({
-            Aplicação: r.nome,
-            VersaoPREPROD: r.versaoA,
-            VersaoHML: r.versaoB,
-            Status: r.status,
-            PathPREPROD: r.pathA,
-            PathHML: r.pathB
-        }));
+        // Compara PREPROD x HML (Se ambos existirem)
+        if (filesState.preprod.length > 0 && filesState.hml.length > 0) {
+            const preHml = compareEnvironments(resultados.preprod, resultados.hml, 'PREPROD', 'HML');
+            diffPreHml = preHml.filter(r => r.status.startsWith('Maior em')).length;
+            preHmlData = preHml.map(r => ({
+                Aplicação: r.nome,
+                VersaoPREPROD: r.versaoA,
+                VersaoHML: r.versaoB,
+                Status: r.status,
+                PathPREPROD: r.pathA,
+                PathHML: r.pathB
+            }));
+        }
 
-        const hmlProdData = hmlProd.map(r => ({
-            Aplicação: r.nome,
-            VersaoHML: r.versaoA,
-            VersaoPROD: r.versaoB,
-            Status: r.status,
-            PathHML: r.pathA,
-            PathPROD: r.pathB
-        }));
+        // Compara HML x PROD (Se ambos existirem)
+        if (filesState.hml.length > 0 && filesState.prod.length > 0) {
+            const hmlProd = compareEnvironments(resultados.hml, resultados.prod, 'HML', 'PROD');
+            hmlProdData = hmlProd.map(r => ({
+                Aplicação: r.nome,
+                VersaoHML: r.versaoA,
+                VersaoPROD: r.versaoB,
+                Status: r.status,
+                PathHML: r.pathA,
+                PathPROD: r.pathB
+            }));
+        }
 
+        renderTableWithFilters('tablePreProd', preProdData, ['Aplicação', 'Versão PREPROD', 'Versão PROD', 'Status', 'Path PREPROD', 'Path PROD'], 'preProd');
+        renderTableWithFilters('tablePreHml', preHmlData, ['Aplicação', 'Versão PREPROD', 'Versão HML', 'Status', 'Path PREPROD', 'Path HML'], 'preHml');
+        renderTableWithFilters('tableHmlProd', hmlProdData, ['Aplicação', 'Versão HML', 'Versão PROD', 'Status', 'Path HML', 'Path PROD'], 'hmlProd');
+        
         const todasDups = [...hmlResult.duplicadas, ...preResult.duplicadas, ...prodResult.duplicadas];
         const duplicadasData = todasDups.map(d => ({
             Ambiente: d.ambiente || '?',
@@ -478,25 +498,19 @@ document.getElementById('btnCompare').addEventListener('click', async () => {
             Versao1: d.versao1,
             Versao2: d.versao2
         }));
-
-        renderTableWithFilters('tablePreProd', preProdData, ['Aplicação', 'Versão PREPROD', 'Versão PROD', 'Status', 'Path PREPROD', 'Path PROD'], 'preProd');
-        renderTableWithFilters('tablePreHml', preHmlData, ['Aplicação', 'Versão PREPROD', 'Versão HML', 'Status', 'Path PREPROD', 'Path HML'], 'preHml');
-        renderTableWithFilters('tableHmlProd', hmlProdData, ['Aplicação', 'Versão HML', 'Versão PROD', 'Status', 'Path HML', 'Path PROD'], 'hmlProd');
         renderTableWithFilters('tableDuplicadas', duplicadasData, ['Ambiente', 'Aplicação', 'Path', 'Versão 1', 'Versão 2'], 'duplicadas');
 
-        const totalAppsHml = Array.from(resultados.hml.values()).reduce((acc, arr) => acc + arr.length, 0);
-        const totalAppsPre = Array.from(resultados.preprod.values()).reduce((acc, arr) => acc + arr.length, 0);
-        const totalAppsProd = Array.from(resultados.prod.values()).reduce((acc, arr) => acc + arr.length, 0);
+        const totalAppsHml = resultados.hml ? Array.from(resultados.hml.values()).reduce((acc, arr) => acc + arr.length, 0) : 0;
+        const totalAppsPre = resultados.preprod ? Array.from(resultados.preprod.values()).reduce((acc, arr) => acc + arr.length, 0) : 0;
+        const totalAppsProd = resultados.prod ? Array.from(resultados.prod.values()).reduce((acc, arr) => acc + arr.length, 0) : 0;
 
-        const diffPreProd = preProd.filter(r => r.status.startsWith('Maior em')).length;
-        const diffPreHml = preHml.filter(r => r.status.startsWith('Maior em')).length;
-
+        // Exibe dinamicamente apenas os cards dos ambientes que possuem dados mapeados
         document.getElementById('stats').innerHTML = `
-            <div class="stat-card"><div class="stat-number" style="color:#7a9aba;">${totalAppsHml}</div><div class="stat-label">Apps HML</div></div>
-            <div class="stat-card"><div class="stat-number" style="color:#daaa5a;">${totalAppsPre}</div><div class="stat-label">Apps PREPROD</div></div>
-            <div class="stat-card"><div class="stat-number" style="color:#5adaaa;">${totalAppsProd}</div><div class="stat-label">Apps PROD</div></div>
-            <div class="stat-card"><div class="stat-number" style="color:#ffaaaa;">${diffPreProd}</div><div class="stat-label">Divergências PRE/PROD</div></div>
-            <div class="stat-card"><div class="stat-number" style="color:#ffaaaa;">${diffPreHml}</div><div class="stat-label">Divergências PRE/HML</div></div>
+            <div class="stat-card" style="display: ${totalAppsHml > 0 ? 'block' : 'none'}"><div class="stat-number" style="color:#7a9aba;">${totalAppsHml}</div><div class="stat-label">Apps HML</div></div>
+            <div class="stat-card" style="display: ${totalAppsPre > 0 ? 'block' : 'none'}"><div class="stat-number" style="color:#daaa5a;">${totalAppsPre}</div><div class="stat-label">Apps PREPROD</div></div>
+            <div class="stat-card" style="display: ${totalAppsProd > 0 ? 'block' : 'none'}"><div class="stat-number" style="color:#5adaaa;">${totalAppsProd}</div><div class="stat-label">Apps PROD</div></div>
+            <div class="stat-card" style="display: ${preProdData.length > 0 ? 'block' : 'none'}"><div class="stat-number" style="color:#ffaaaa;">${diffPreProd}</div><div class="stat-label">Divergências PRE/PROD</div></div>
+            <div class="stat-card" style="display: ${preHmlData.length > 0 ? 'block' : 'none'}"><div class="stat-number" style="color:#ffaaaa;">${diffPreHml}</div><div class="stat-label">Divergências PRE/HML</div></div>
         `;
 
         document.getElementById('resultSection').style.display = 'block';
@@ -517,19 +531,16 @@ document.getElementById('btnExport').addEventListener('click', () => {
     function arrayToCSV(data, headers) {
         const rows = [headers.join(',')];
 
-        // Função auxiliar para mapear o cabeçalho amigável para a chave do objeto
-        // Ex: "Versão PREPROD" vira "VersaoPREPROD"
         const normalizeKey = (header) => {
             return header
-                .normalize("NFD")               // Decompõe caracteres com acento (o "ã" vira "a" + "~")
-                .replace(/[\u0300-\u036f]/g, "") // Remove os acentos
-                .replace(/\s+/g, "");           // Remove todos os espaços
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/\s+/g, "");
         };
 
         for (const row of data) {
             const values = headers.map(h => {
                 const key = normalizeKey(h);
-                // Busca pela chave normalizada (ex: row["VersaoPREPROD"]) ou pelo cabeçalho original caso exista
                 let val = row[key] !== undefined ? row[key] : (row[h] || '');
 
                 val = String(val).replace(/"/g, '""');
@@ -544,14 +555,24 @@ document.getElementById('btnExport').addEventListener('click', () => {
     }
 
     let csvContent = '';
-    csvContent += '# COMPARAÇÃO PREPROD x PROD\n';
-    csvContent += arrayToCSV(preProdData, ['Aplicação', 'Versão PREPROD', 'Versão PROD', 'Status', 'Path PREPROD', 'Path PROD']);
-    csvContent += '\n\n';
-    csvContent += '# COMPARAÇÃO PREPROD x HML\n';
-    csvContent += arrayToCSV(preHmlData, ['Aplicação', 'Versão PREPROD', 'Versão HML', 'Status', 'Path PREPROD', 'Path HML']);
-    csvContent += '\n\n';
-    csvContent += '# COMPARAÇÃO HML x PROD\n';
-    csvContent += arrayToCSV(hmlProdData, ['Aplicação', 'Versão HML', 'Versão PROD', 'Status', 'Path HML', 'Path PROD']);
+    
+    // Exporta blocos apenas se eles contiverem dados da análise atual
+    if (preProdData.length > 0) {
+        csvContent += '# COMPARAÇÃO PREPROD x PROD\n';
+        csvContent += arrayToCSV(preProdData, ['Aplicação', 'Versão PREPROD', 'Versão PROD', 'Status', 'Path PREPROD', 'Path PROD']);
+        csvContent += '\n\n';
+    }
+
+    if (preHmlData.length > 0) {
+        csvContent += '# COMPARAÇÃO PREPROD x HML\n';
+        csvContent += arrayToCSV(preHmlData, ['Aplicação', 'Versão PREPROD', 'Versão HML', 'Status', 'Path PREPROD', 'Path HML']);
+        csvContent += '\n\n';
+    }
+
+    if (hmlProdData.length > 0) {
+        csvContent += '# COMPARAÇÃO HML x PROD\n';
+        csvContent += arrayToCSV(hmlProdData, ['Aplicação', 'Versão HML', 'Versão PROD', 'Status', 'Path HML', 'Path PROD']);
+    }
 
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -563,6 +584,7 @@ document.getElementById('btnExport').addEventListener('click', () => {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 });
+
 document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
