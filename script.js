@@ -115,16 +115,31 @@ function extractAppsFromJson(json, servidorPadrao) {
         if (!app.Path) continue;
 
         const upperPath = app.Path.toUpperCase();
-        if (upperPath.includes('\\BKP\\') || upperPath.includes('\\OLD\\') ||
-            upperPath.includes('\\BACKUP\\') || upperPath.includes('\\VERSIONAMENTO PARALELO\\') ||
-            upperPath.includes('\\SUBIDA\\')) {
-            continue;
+        
+        // --- FILTRO DE DIRETÓRIOS E PASTAS INDEVIDAS ---
+        if (
+            upperPath.includes('VERSIONAMENTO PARALELO HML') || 
+            upperPath.includes('\\VERSIONAMENTO PARALELO\\') ||
+            upperPath.includes('\\BKP\\') || upperPath.endsWith('\\BKP') ||
+            upperPath.includes('\\OLD\\') || upperPath.endsWith('\\OLD') ||
+            upperPath.includes('\\BACKUP\\') || upperPath.endsWith('\\BACKUP') ||
+            upperPath.includes('\\SUBIDA\\') ||
+            upperPath.includes('\\_2\\') || upperPath.endsWith('\\_2')
+        ) {
+            continue; 
         }
 
         let parts = app.Path.split('\\').filter(p => p.trim() !== '');
         if (parts.length === 0) continue;
 
         let name = parts[parts.length - 1];
+
+        // --- TRAVA DE NOME DE APLICAÇÃO (_2, _3, etc.) ---
+        // Se o nome terminar com underline seguido de qualquer número (ex: WebBackofficeDC_2, App_3), ignora.
+        // O i no final da regex garante que ignore caso haja extensão (.exe) ainda colada no nome.
+        if (/_\d+(\.exe)?$/i.test(name)) {
+            continue; // Pula e não extrai a aplicação
+        }
 
         // Remove ID numérico inicial padrão SaaS/Planilhas (Ex: "28421 - Web CDC Contábil" vira "Web CDC Contábil")
         name = name.replace(/^\d+\s*-\s*/, '');
