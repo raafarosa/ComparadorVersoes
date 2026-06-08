@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Comparador de Ambientes - HML | PREPROD | PROD</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="container">
+    <h1>🔄 Comparador de Ambientes - HML | PREPROD | PROD</h1>
+
+    <div class="mode-selector">
+        <div class="mode-btn auto active" data-mode="auto">🤖 Detecção Automática (recomendado)</div>
+        <div class="mode-btn manual" data-mode="manual">📁 Modo Manual</div>
+    </div>
+
+    <div id="auto-panel" class="mode-panel active">
+        <div class="file-drop" id="autoDrop">
+            📂 Arraste ou clique para selecionar os arquivos JSON<br>
+            <small>(Selecione quantos quiser - o sistema vai identificar HML, PREP e PROD pelo nome)</small>
+            <input type="file" id="autoFileInput" multiple accept=".json" style="display:none">
+        </div>
+        <div id="autoFileList" class="file-list"></div>
+        <div id="autoStatus" style="margin-top:10px; font-size:12px; color:#aaaaaa;"></div>
+    </div>
+
+    <div id="manual-panel" class="mode-panel">
+        <div class="upload-area">
+            <div class="env-box hml">
+                <div class="env-title hml">🏗️ HML (Homologação)</div>
+                <div class="file-drop" data-env="hml">
+                    📂 Clique para selecionar arquivos HML
+                    <input type="file" class="manual-file-input" data-env="hml" multiple accept=".json" style="display:none">
+                </div>
+                <div class="file-list" id="hmlFileList"></div>
+            </div>
+            <div class="env-box preprod">
+                <div class="env-title preprod">⚙️ PREPROD (Pré-Produção)</div>
+                <div class="file-drop" data-env="preprod">
+                    📂 Clique para selecionar arquivos PREPROD
+                    <input type="file" class="manual-file-input" data-env="preprod" multiple accept=".json" style="display:none">
+                </div>
+                <div class="file-list" id="preprodFileList"></div>
+            </div>
+            <div class="env-box prod">
+                <div class="env-title prod">🚀 PROD (Produção)</div>
+                <div class="file-drop" data-env="prod">
+                    📂 Clique para selecionar arquivos PROD
+                    <input type="file" class="manual-file-input" data-env="prod" multiple accept=".json" style="display:none">
+                </div>
+                <div class="file-list" id="prodFileList"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="btn-group">
+        <button id="btnCompare" disabled>▶ Comparar Ambientes</button>
+        <button id="btnExport" class="btn-export" disabled>📎 Exportar CSV</button>
+    </div>
+
+    <div class="loading" id="loading">
+        <div>Processando arquivos...</div>
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    </div>
+
+    <div class="result-section" id="resultSection">
+        <div class="stats" id="stats"></div>
+        <div class="tabs">
+            <div class="tab active" data-tab="tab-pre-prod">📊 PREPROD x PROD</div>
+            <div class="tab" data-tab="tab-pre-hml">🔄 PREPROD x HML</div>
+            <div class="tab" data-tab="tab-hml-prod">⚖️ HML x PROD</div>
+            <div class="tab" data-tab="tab-duplicadas">📑 Duplicadas Detectadas</div>
+        </div>
+        
+        <div id="tab-pre-prod" class="tab-content active">
+            <div class="filter-header">
+                <span>🔍 Filtros por coluna</span>
+                <button class="clear-filters-btn" data-table="tablePreProd">Limpar Filtros</button>
+            </div>
+            <div class="table-wrapper">
+                <table id="tablePreProd">
+                    <thead id="theadPreProd"></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div id="tab-pre-hml" class="tab-content">
+            <div class="filter-header">
+                <span>🔍 Filtros por coluna</span>
+                <button class="clear-filters-btn" data-table="tablePreHml">Limpar Filtros</button>
+            </div>
+            <div class="table-wrapper">
+                <table id="tablePreHml">
+                    <thead id="theadPreHml"></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div id="tab-hml-prod" class="tab-content">
+            <div class="filter-header">
+                <span>🔍 Filtros por coluna</span>
+                <button class="clear-filters-btn" data-table="tableHmlProd">Limpar Filtros</button>
+            </div>
+            <div class="table-wrapper">
+                <table id="tableHmlProd">
+                    <thead id="theadHmlProd"></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div id="tab-duplicadas" class="tab-content">
+            <div class="filter-header">
+                <span>🔍 Filtros por coluna</span>
+                <button class="clear-filters-btn" data-table="tableDuplicadas">Limpar Filtros</button>
+            </div>
+            <div class="table-wrapper">
+                <table id="tableDuplicadas">
+                    <thead id="theadDuplicadas"></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
