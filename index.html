@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Comparador de Versões</title>
@@ -18,9 +19,9 @@
 
     <div id="auto-panel" class="mode-panel active">
         <div class="file-drop" id="autoDrop">
-            📂 Arraste ou clique para selecionar os arquivos JSON<br>
+            📂 Arraste ou clique para selecionar os arquivos JSON ou Excel (.xlsx, .xls)<br>
             <small>(Selecione quantos quiser - o sistema vai identificar HML, PREP e PROD pelo nome)</small>
-            <input type="file" id="autoFileInput" multiple accept=".json" style="display:none">
+            <input type="file" id="autoFileInput" multiple accept=".json,.xlsx,.xls" style="display:none">
         </div>
         <div id="autoFileList" class="file-list"></div>
         <div id="autoStatus" style="margin-top:10px; font-size:12px; color:#aaaaaa;"></div>
@@ -32,7 +33,7 @@
                 <div class="env-title hml">🏗️ HML (Homologação)</div>
                 <div class="file-drop" data-env="hml">
                     📂 Clique para selecionar arquivos HML
-                    <input type="file" class="manual-file-input" data-env="hml" multiple accept=".json" style="display:none">
+                    <input type="file" class="manual-file-input" data-env="hml" multiple accept=".json,.xlsx,.xls" style="display:none">
                 </div>
                 <div class="file-list" id="hmlFileList"></div>
             </div>
@@ -40,7 +41,7 @@
                 <div class="env-title preprod">⚙️ PREPROD (Pré-Produção)</div>
                 <div class="file-drop" data-env="preprod">
                     📂 Clique para selecionar arquivos PREPROD
-                    <input type="file" class="manual-file-input" data-env="preprod" multiple accept=".json" style="display:none">
+                    <input type="file" class="manual-file-input" data-env="preprod" multiple accept=".json,.xlsx,.xls" style="display:none">
                 </div>
                 <div class="file-list" id="preprodFileList"></div>
             </div>
@@ -48,7 +49,7 @@
                 <div class="env-title prod">🚀 PROD (Produção)</div>
                 <div class="file-drop" data-env="prod">
                     📂 Clique para selecionar arquivos PROD
-                    <input type="file" class="manual-file-input" data-env="prod" multiple accept=".json" style="display:none">
+                    <input type="file" class="manual-file-input" data-env="prod" multiple accept=".json,.xlsx,.xls" style="display:none">
                 </div>
                 <div class="file-list" id="prodFileList"></div>
             </div>

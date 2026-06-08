@@ -8,11 +8,103 @@ let tableDataCache = {
     duplicadas: []
 };
 
+// Dicionário de sinônimos/aliases trazido do script do seu amigo para mapear planilhas dinamicamente
+const aliases = {
+    appName: ["aplicacao", "aplicação", "application", "nome", "nomeaplicacao", "nome da aplicacao", "nome da aplicação", "app", "sistema"],
+    changeset: ["changeset", "change set", "change_set", "change"],
+    release: ["release", "versao", "versão", "version"],
+};
+
 const autoDrop = document.getElementById('autoDrop');
 const autoFileInput = document.getElementById('autoFileInput');
 const autoFileList = document.getElementById('autoFileList');
 const autoStatus = document.getElementById('autoStatus');
-const manualFileInputs = document.querySelectorAll('.manual-file-input');
+
+// Funções auxiliares de normalização e busca por apelidos (XLSX)
+function normalizeLabel(value) {
+    return String(value || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9]/g, "")
+        .toLowerCase();
+}
+
+function findValueByAlias(obj, kind) {
+    const keys = Object.keys(obj || {});
+    const wanted = aliases[kind].map(normalizeLabel);
+    for (const key of keys) {
+        const normalized = normalizeLabel(key);
+        if (wanted.includes(normalized)) {
+            return obj[key];
+        }
+    }
+    return undefined;
+}
+
+// Converte as linhas extraídas do XLSX para a estrutura padronizada de Aplicações do script
+function parseXlsxRows(rows) {
+    const aplicacoes = [];
+    for (const row of rows) {
+        const appName = findValueByAlias(row, "appName");
+        if (!appName) continue;
+
+        const changeset = findValueByAlias(row, "changeset") ?? "0";
+        const release = findValueByAlias(row, "release") ?? "0";
+
+        // Planilhas costumam não ter a coluna Path física, simulamos uma chave para compatibilidade
+        const simuladoPath = `\\\\XLSX_GENERATED\\\\${String(appName).trim()}`;
+
+        aplicacoes.push({
+            Path: simuladoPath,
+            Changeset: String(changeset).trim(),
+            Release: String(release).trim()
+        });
+    }
+    return { Aplicacoes: aplicacoes };
+}
+
+// Processa o buffer do Excel lendo todas as abas existentes
+function parseWorkbook(arrayBuffer) {
+    const wb = XLSX.read(arrayBuffer, { type: "array" });
+    const allRows = [];
+    wb.SheetNames.forEach((name) => {
+        const sheet = wb.Sheets[name];
+        // blankrows: false impede que linhas fantasmas quebrem o mapeador
+        const rows = XLSX.utils.sheet_to_json(sheet, { defval: "", blankrows: false });
+        if (rows.length > 0) {
+            allRows.push(...rows);
+        }
+    });
+    return allRows;
+}
+
+// Mantém a leitura do formato texto/TSV do SaaS limpo
+function parseSaasTextFile(text) {
+    const lines = text.split('\n');
+    const aplicacoes = [];
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line || line.startsWith('Aplicação') || line.toLowerCase().includes('changeset')) {
+            continue;
+        }
+
+        const parts = line.split(/\t| {2,}/);
+        if (parts.length > 0) {
+            const aplicacaoCrua = parts[0].trim();
+            const changeset = parts[1] ? parts[1].trim() : '0';
+            const release = parts[2] ? parts[2].trim() : '';
+            const simuladoPath = `\\\\SAAS_GENERATED\\\\${aplicacaoCrua}`;
+
+            aplicacoes.push({
+                Path: simuladoPath,
+                Changeset: changeset,
+                Release: release
+            });
+        }
+    }
+    return { Aplicacoes: aplicacoes };
+}
 
 function extractAppsFromJson(json, servidorPadrao) {
     const apps = [];
@@ -33,11 +125,15 @@ function extractAppsFromJson(json, servidorPadrao) {
         if (parts.length === 0) continue;
 
         let name = parts[parts.length - 1];
+
+        // Remove ID numérico inicial padrão SaaS/Planilhas (Ex: "28421 - Web CDC Contábil" vira "Web CDC Contábil")
+        name = name.replace(/^\d+\s*-\s*/, '');
+
         name = name.replace(/_I\d+_R_C\d+/gi, '');
         name = name.replace(/_C\d+$/gi, '');
         name = name.replace(/\.exe$/i, '');
         name = name.replace(/_\d+$/i, '');
-        name = name.replace(/_old$/i, '').replace(/_bkp$/i, '').replace(/_backup$/i, '');
+        name = name.replace(/_old$/i, '').replace(/_bkp$/i, '').replace(/_backup$/i);
         name = name.replace(/_2$/i, '').replace(/_3$/i, '').replace(/_4$/i);
 
         const norm = {
@@ -85,8 +181,26 @@ async function processEnvironment(envName, files) {
 
     for (const file of files) {
         try {
-            const text = await file.text();
-            const json = JSON.parse(text);
+            const ext = file.name.split('.').pop().toLowerCase();
+            let json;
+
+            if (ext === "json") {
+                const text = await file.text();
+                const trimmedText = text.trim();
+                if (trimmedText.startsWith('{') || trimmedText.startsWith('[')) {
+                    json = JSON.parse(text);
+                } else {
+                    json = parseSaasTextFile(text);
+                }
+            } else if (["xlsx", "xls"].includes(ext)) {
+                const arrayBuffer = await file.arrayBuffer();
+                const rawRows = parseWorkbook(arrayBuffer);
+                json = parseXlsxRows(rawRows);
+            } else {
+                const text = await file.text();
+                json = parseSaasTextFile(text);
+            }
+
             const apps = extractAppsFromJson(json, envName);
 
             for (const app of apps) {
@@ -355,66 +469,107 @@ function renderTableWithFilters(tableId, data, columns, tableType) {
 }
 
 function updateCompareButton() {
-    const hasHml = filesState.hml.length > 0;
-    const hasPre = filesState.preprod.length > 0;
-    const hasProd = filesState.prod.length > 0;
+    const hasHml = filesState.hml && filesState.hml.length > 0;
+    const hasPre = filesState.preprod && filesState.preprod.length > 0;
+    const hasProd = filesState.prod && filesState.prod.length > 0;
 
-    // Permite comparar se pelo menos dois ambientes quaisquer possuírem arquivos
     const activeEnvs = [hasHml, hasPre, hasProd].filter(Boolean).length;
-    document.getElementById('btnCompare').disabled = (activeEnvs < 2);
+    
+    const btnCompare = document.getElementById('btnCompare');
+    if (btnCompare) {
+        if (activeEnvs >= 2) {
+            btnCompare.disabled = false;
+            btnCompare.removeAttribute('disabled');
+            btnCompare.style.background = '#1a73e8';
+            btnCompare.style.cursor = 'pointer';
+        } else {
+            btnCompare.disabled = true;
+            btnCompare.style.background = '';
+            btnCompare.style.cursor = 'not-allowed';
+        }
+    }
 }
 
 function detectEnvByFilename(filename) {
     const upper = filename.toUpperCase();
     if (upper.includes('HML') || upper.includes('HOMOLOG')) return 'hml';
     if (upper.includes('PREP') || upper.includes('PREPROD') || upper.includes('PRE-PROD')) return 'preprod';
-    if (upper.includes('PROD') || upper.includes('PRODUCAO')) return 'prod';
+    if (upper.includes('PROD') || upper.includes('PRODUCAO') || upper.includes('PRD')) return 'prod';
     return null;
 }
 
-autoDrop.addEventListener('click', () => autoFileInput.click());
-autoFileInput.addEventListener('change', async (e) => {
-    const files = Array.from(e.target.files);
-    if (files.length === 0) return;
+// ========================================================
+// GERENCIAMENTO DE CAPTURA DE EVENTOS (AUTOMÁTICO E MANUAL)
+// ========================================================
 
-    filesState = { hml: [], preprod: [], prod: [] };
-    autoStatus.innerHTML = '';
-    let identified = { hml: 0, preprod: 0, prod: 0, unknown: 0 };
+// 1. Evento unificado do Modo Automático
+if (autoDrop && autoFileInput) {
+    autoDrop.addEventListener('click', (e) => {
+        if (e.target === autoFileInput) return;
+        autoFileInput.click();
+    });
 
-    for (const file of files) {
-        const env = detectEnvByFilename(file.name);
-        if (env) {
-            filesState[env].push(file);
-            identified[env]++;
-            autoStatus.innerHTML += `<span class="file-tag" style="border-color:#5adaaa;">✅ ${file.name} → ${env.toUpperCase()}</span> `;
-        } else {
-            identified.unknown++;
-            autoStatus.innerHTML += `<span class="file-tag" style="border-color:#ff8888;">⚠️ ${file.name} → não identificado</span> `;
+    autoFileInput.addEventListener('change', (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
+        filesState = { hml: [], preprod: [], prod: [] };
+        autoStatus.innerHTML = '';
+        let identified = { hml: 0, preprod: 0, prod: 0, unknown: 0 };
+
+        for (const file of files) {
+            const env = detectEnvByFilename(file.name);
+            if (env) {
+                filesState[env].push(file);
+                identified[env]++;
+                autoStatus.innerHTML += `<span class="file-tag" style="border-color:#5adaaa; padding:2px 6px; margin:2px; display:inline-block; border:1px solid;">✅ ${file.name} → ${env.toUpperCase()}</span> `;
+            } else {
+                identified.unknown++;
+                autoStatus.innerHTML += `<span class="file-tag" style="border-color:#ff8888; padding:2px 6px; margin:2px; display:inline-block; border:1px solid;">⚠️ ${file.name} → não identificado</span> `;
+            }
         }
+
+        autoFileList.innerHTML = `
+            <br><strong>📊 Resumo dos Arquivos:</strong><br>
+            🏗️ HML: ${identified.hml} arquivo(s)<br>
+            ⚙️ PREPROD: ${identified.preprod} arquivo(s)<br>
+            🚀 PROD: ${identified.prod} arquivo(s)<br>
+            ${identified.unknown > 0 ? `⚠️ Não identificados: ${identified.unknown}` : ''}
+        `;
+        
+        updateCompareButton();
+    });
+}
+
+// 2. Evento unificado e corrigido do Modo Manual (Removido loops fantasmas)
+const manualInputs = document.querySelectorAll('.manual-file-input');
+manualInputs.forEach(input => {
+    const env = input.dataset.env;
+    const dropArea = input.closest('.file-drop');
+
+    if (dropArea) {
+        dropArea.addEventListener('click', (e) => {
+            if (e.target === input) return;
+            input.click();
+        });
     }
 
-    autoFileList.innerHTML = `
-        <strong>📊 Resumo:</strong><br>
-        🏗️ HML: ${identified.hml} arquivo(s)<br>
-        ⚙️ PREPROD: ${identified.preprod} arquivo(s)<br>
-        🚀 PROD: ${identified.prod} arquivo(s)<br>
-        ${identified.unknown > 0 ? `⚠️ Não identificados: ${identified.unknown}` : ''}
-    `;
-    updateCompareButton();
-});
-
-manualFileInputs.forEach(input => {
-    const env = input.dataset.env;
-    input.parentElement.addEventListener('click', () => input.click());
     input.addEventListener('change', (e) => {
         const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
         filesState[env] = files;
+        
         const listDiv = document.getElementById(`${env}FileList`);
-        listDiv.innerHTML = files.map(f => `<span class="file-tag">📄 ${f.name}</span>`).join('');
+        if (listDiv) {
+            listDiv.innerHTML = files.map(f => `<span class="file-tag" style="padding:2px 6px; margin:2px; display:inline-block; border:1px solid #444;">📄 ${f.name}</span>`).join('');
+        }
+        
         updateCompareButton();
     });
 });
 
+// Selector de Abas / Modos de Painel
 document.querySelectorAll('.mode-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
@@ -425,6 +580,7 @@ document.querySelectorAll('.mode-btn').forEach(btn => {
     });
 });
 
+// Ação do Botão Comparador
 document.getElementById('btnCompare').addEventListener('click', async () => {
     const loading = document.getElementById('loading');
     const progressFill = document.getElementById('progressFill');
@@ -445,7 +601,6 @@ document.getElementById('btnCompare').addEventListener('click', async () => {
         let preProdData = [], preHmlData = [], hmlProdData = [];
         let diffPreProd = 0, diffPreHml = 0;
 
-        // Compara PREPROD x PROD (Se ambos existirem)
         if (filesState.preprod.length > 0 && filesState.prod.length > 0) {
             const preProd = compareEnvironments(resultados.preprod, resultados.prod, 'PREPROD', 'PROD');
             diffPreProd = preProd.filter(r => r.status.startsWith('Maior em')).length;
@@ -459,7 +614,6 @@ document.getElementById('btnCompare').addEventListener('click', async () => {
             }));
         }
 
-        // Compara PREPROD x HML (Se ambos existirem)
         if (filesState.preprod.length > 0 && filesState.hml.length > 0) {
             const preHml = compareEnvironments(resultados.preprod, resultados.hml, 'PREPROD', 'HML');
             diffPreHml = preHml.filter(r => r.status.startsWith('Maior em')).length;
@@ -473,7 +627,6 @@ document.getElementById('btnCompare').addEventListener('click', async () => {
             }));
         }
 
-        // Compara HML x PROD (Se ambos existirem)
         if (filesState.hml.length > 0 && filesState.prod.length > 0) {
             const hmlProd = compareEnvironments(resultados.hml, resultados.prod, 'HML', 'PROD');
             hmlProdData = hmlProd.map(r => ({
@@ -489,7 +642,7 @@ document.getElementById('btnCompare').addEventListener('click', async () => {
         renderTableWithFilters('tablePreProd', preProdData, ['Aplicação', 'Versão PREPROD', 'Versão PROD', 'Status', 'Path PREPROD', 'Path PROD'], 'preProd');
         renderTableWithFilters('tablePreHml', preHmlData, ['Aplicação', 'Versão PREPROD', 'Versão HML', 'Status', 'Path PREPROD', 'Path HML'], 'preHml');
         renderTableWithFilters('tableHmlProd', hmlProdData, ['Aplicação', 'Versão HML', 'Versão PROD', 'Status', 'Path HML', 'Path PROD'], 'hmlProd');
-        
+
         const todasDups = [...hmlResult.duplicadas, ...preResult.duplicadas, ...prodResult.duplicadas];
         const duplicadasData = todasDups.map(d => ({
             Ambiente: d.ambiente || '?',
@@ -504,7 +657,6 @@ document.getElementById('btnCompare').addEventListener('click', async () => {
         const totalAppsPre = resultados.preprod ? Array.from(resultados.preprod.values()).reduce((acc, arr) => acc + arr.length, 0) : 0;
         const totalAppsProd = resultados.prod ? Array.from(resultados.prod.values()).reduce((acc, arr) => acc + arr.length, 0) : 0;
 
-        // Exibe dinamicamente apenas os cards dos ambientes que possuem dados mapeados
         document.getElementById('stats').innerHTML = `
             <div class="stat-card" style="display: ${totalAppsHml > 0 ? 'block' : 'none'}"><div class="stat-number" style="color:#7a9aba;">${totalAppsHml}</div><div class="stat-label">Apps HML</div></div>
             <div class="stat-card" style="display: ${totalAppsPre > 0 ? 'block' : 'none'}"><div class="stat-number" style="color:#daaa5a;">${totalAppsPre}</div><div class="stat-label">Apps PREPROD</div></div>
@@ -523,6 +675,7 @@ document.getElementById('btnCompare').addEventListener('click', async () => {
     }
 });
 
+// Função de Exportação CSV
 document.getElementById('btnExport').addEventListener('click', () => {
     const preProdData = tableDataCache.preProd || [];
     const preHmlData = tableDataCache.preHml || [];
@@ -555,8 +708,7 @@ document.getElementById('btnExport').addEventListener('click', () => {
     }
 
     let csvContent = '';
-    
-    // Exporta blocos apenas se eles contiverem dados da análise atual
+
     if (preProdData.length > 0) {
         csvContent += '# COMPARAÇÃO PREPROD x PROD\n';
         csvContent += arrayToCSV(preProdData, ['Aplicação', 'Versão PREPROD', 'Versão PROD', 'Status', 'Path PREPROD', 'Path PROD']);
@@ -585,6 +737,7 @@ document.getElementById('btnExport').addEventListener('click', () => {
     URL.revokeObjectURL(url);
 });
 
+// Gerenciador de Abas de Resultados
 document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
