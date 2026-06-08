@@ -120,6 +120,8 @@ function extractAppsFromJson(json, servidorPadrao) {
         if (
             upperPath.includes('VERSIONAMENTO PARALELO HML') || 
             upperPath.includes('\\VERSIONAMENTO PARALELO\\') ||
+            upperPath.includes('\\COMPATIBILIDADECNPJALFANUMERICO') || // Captura o termo em qualquer parte do path
+            upperPath.includes('\\FI.DEPLOY') || // Captura FI.Deploy com ou sem contrabarra no final
             upperPath.includes('\\BKP\\') || upperPath.endsWith('\\BKP') ||
             upperPath.includes('\\OLD\\') || upperPath.endsWith('\\OLD') ||
             upperPath.includes('\\BACKUP\\') || upperPath.endsWith('\\BACKUP') ||
@@ -134,11 +136,15 @@ function extractAppsFromJson(json, servidorPadrao) {
 
         let name = parts[parts.length - 1];
 
-        // --- TRAVA DE NOME DE APLICAÇÃO (_2, _3, etc.) ---
-        // Se o nome terminar com underline seguido de qualquer número (ex: WebBackofficeDC_2, App_3), ignora.
-        // O i no final da regex garante que ignore caso haja extensão (.exe) ainda colada no nome.
+        // --- TRAVA DE NOME DE APLICAÇÃO INDEVIDA / DUPLICADA ---
+        // 1. Remove variações do validador de CNPJ Alfanumérico antes de tratar o nome
+        if (name.toUpperCase().startsWith('FI.VERIFICACOMPATIBILIDADECNPJALFANUMERICO')) {
+            continue;
+        }
+
+        // 2. Se o nome terminar com underline seguido de qualquer número (ex: WebBackofficeDC_2, App_3), ignora.
         if (/_\d+(\.exe)?$/i.test(name)) {
-            continue; // Pula e não extrai a aplicação
+            continue; 
         }
 
         // Remove ID numérico inicial padrão SaaS/Planilhas (Ex: "28421 - Web CDC Contábil" vira "Web CDC Contábil")
